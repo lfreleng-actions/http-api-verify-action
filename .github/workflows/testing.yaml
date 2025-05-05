@@ -3,59 +3,67 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
 # Action test/validation workflow
-name: "Test GitHub Action 🧪"
+name: 'Test GitHub Action 🧪'
 
 # yamllint disable-line rule:truthy
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: ['main']
   pull_request:
-    branches: ["main"]
+    branches: ['main']
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
 
 permissions: {}
 
 jobs:
   ### Test the GitHub Action in this Repository ###
   tests:
-    name: "Test local GitHub Action"
-    runs-on: ubuntu-24.04
+    name: 'Test local GitHub Action'
+    runs-on: 'ubuntu-24.04'
     permissions:
       contents: read
+    timeout-minutes: 1
     steps:
-      - name: "Checkout repository"
+      - name: 'Checkout repository'
+        # yamllint disable-line rule:line-length
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # Perform setup prior to running test(s)
-      - name: "Testing setup step"
-        shell: bash
-        run: |
-          # Testing setup step
-          echo "Testing setup step"
-          echo "Testing setup step/summary output" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: "Running local action: ${{ github.repository }}"
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [Web Site]"
         uses: ./
         with:
-          input: "test input 💬"
-
-      - name: "Validated local action: ${{ github.repository }}"
-        shell: bash
-        run: |
-          # Local action validation
-          echo "Validated local action: ${{ github.repository }}"
-          echo "Validation step summary output" >> "$GITHUB_STEP_SUMMARY"
+          url: 'https://www.linuxfoundation.org'
+          service_name: 'Linux Foundation Web Server'
+          retries: 3
+          delay: 3
 
       # yamllint disable-line rule:line-length
-      - name: "Running local action: ${{ github.repository }} [Override Failure]"
+      - name: "Running local action: ${{ github.repository }} [Web Site: RegEx/Validate]"
+        uses: ./
+        with:
+          url: 'https://www.linuxfoundation.org'
+          service_name: 'Linux Foundation Web Server'
+          retries: 3
+          delay: 3
+          regex: 'Become a Member'
+
+      - name: "Running local action: ${{ github.repository }} [Failure test]"
         uses: ./
         id: failure
         continue-on-error: true
         with:
-          invalid_input: "Some garbage"
+          url: 'https://garbage.junk.notevenworthit.com:8080'
+          service_name: 'Test/Bogus API Server'
+          retries: 2
+          delay: 3
+          debug: true
 
-      # Failure testing is also important
-      - name: "Error if step above did NOT fail"
+      # Validate expected failure above
+      - name: 'Error if step above did NOT fail'
         if: steps.failure.outcome == 'success'
         shell: bash
         run: |

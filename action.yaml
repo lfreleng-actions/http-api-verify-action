@@ -2,37 +2,243 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
-# actions-template
-name: "🛠️ Actions Template"
-description: "Description of action"
-# Any relevant notes/observations can go here
+# http-api-verify-action
+name: '🛠️ Check API/Service Availability'
+description: 'Tests an HTTP/HTTPS API endpoint for service availability'
 
 inputs:
-  input:
-    description: "Description of input"
+  # Mandatory
+  url:
+    # Example: "http://username:password@127.0.0.1:8080/index.yaml"
+    description: 'URL of API server/interface to check'
     required: true
     type: 'string'
+  auth_string:
+    # Parsed from the URL string above, but can be provided explicitly
+    # Should be in the format used by cURL, e.g. username:password
+    # Will be passed to cURL using the flag: curl -c "username:password"
+    description: 'Authentication string, colon separated username/password'
+    required: false
+    type: 'string'
+  service_name:
+    # Example: 'ChartMuseum Repository'
+    description: 'Name of HTTP/HTTPS API service tested'
+    required: false
+    type: 'string'
+    default: 'API Service'
+  delay:
+    description: 'Time in seconds between API service connection attempts'
+    required: false
+    type: 'string'
+    # Try once every second
+    default: 1
+  retries:
+    description: 'Number of retries before declaring service unavailable'
+    required: false
+    # With default one second retries, will timeout after 90 seconds
+    type: 'string'
+    default: 60
+  http_code:
+    description: 'HTTP response code to accept from the API service'
+    required: false
+    type: 'string'
+    default: 200
+  regex:
+    # Extended regular expression; uses grep -E flag
+    description: 'Verify server response with regular expression'
+    required: false
+    type: 'string'
+  debug:
+    description: "Enables cURL/action debugging"
+    required: false
+    type: 'boolean'
+    default: false
 
 outputs:
-  output:
-    description: "Description of output"
-    value: ${{ steps.code.outputs.output }}
+  startup_delay:
+    description: 'Number of seconds waiting for availability/failure'
+    value: "${{ steps.check.outputs.startup_delay }}"
+  response_code:
+    description: 'Last HTTP response code received from the API server'
+    value: "${{ steps.check.outputs.return_code }}"
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
-    - name: "Friendly Name"
-      id: code
+    - name: 'Validate action inputs'
       shell: bash
       run: |
-        # Friendly Name
-        input="${{ inputs.input }}"
-        if [ -z "$input" ]; then
-          echo "Error: mandatory input was not set/configured ❌"
-          exit 1
+        # Validate action inputs
+        # Delay time and retries cannot be zero
+        if ! [[ "${{ inputs.delay }}" =~ ^[0-9]+$ ]]; then
+          echo "Error: retry delay must be a positive integer ❌"; exit 1
+        fi
+        if ! [[ "${{ inputs.retries }}" =~ ^[0-9]+$ ]]; then
+          echo "Error: number of retries must be a positive integer ❌"; exit 1
+        fi
+        if ! [[ "${{ inputs.http_code }}" =~ ^[0-9]+$ ]]; then
+          echo "Error: HTTP response code must be a positive integer ❌"; exit 1
         fi
 
-        echo "output=$input" >> "$GITHUB_ENV"
-        echo "output=$input" >> "$GITHUB_OUTPUT"
-        echo "Action received: $input ✅"
-        echo "Action received: $input ✅" >> "$GITHUB_STEP_SUMMARY"
+    - name: "Check API/Service Availability"
+      id: check
+      shell: bash
+      run: |
+        # Check API/Service Availability
+
+        set -x
+
+        # Check for cURL binary in PATH
+        curl_cmd=$(which curl || true)
+        if [ ! -x "$curl_cmd" ]; then
+          echo 'Error: cURL command not found ❌'; exit 1
+        fi
+
+        if [ -z "${{ inputs.url }}" ]; then
+          echo 'Error: a URL must be provided as input ❌'; exit 1
+        fi
+
+        url="${{ inputs.url }}"
+        service_name="${{ inputs.service_name }}"
+        delay="${{ inputs.delay }}"
+        retries="${{ inputs.retries }}"
+        http_code="${{ inputs.http_code }}"
+        auth_string="${{ inputs.auth_string }}"
+        debug_lower=$(echo "${{ inputs.debug }}" | tr '[:upper:]' '[:lower:]')
+        counter='0'
+        startup_delay='0'
+
+        if [ "f$debug_lower" = 'ftrue' ]; then
+          echo "Debugging enabled 🐞"
+          # Don't silence grep command output during response testing
+          grep_cmd="grep"
+        else
+          grep_cmd="grep -q"
+        fi
+
+        # Define a function to parse URLs
+        parseString() {
+          protocol=$(echo "$1" | grep "://" | sed -e's,^\(.*://\).*,\1,g')
+          string_no_protocol="${1/$protocol/}"
+          protocol=$(echo "$protocol" | \
+            tr '[:upper:]' '[:lower:]' | sed 's:\://::')
+
+          # When authentication not explicitly provided, attempt to parse URL
+          if [ -z "${{ inputs.auth_string }}" ]; then
+            userpass=$(echo "$string_no_protocol" | grep "@" | \
+              cut -d"/" -f1 | rev | cut -d"@" -f2- | rev || true)
+            password=$(echo "$userpass" | grep ":" | cut -d":" -f2 || true)
+            if [ -n "$password" ]; then
+              username=$(echo "$userpass" | grep ":" | cut -d":" -f1 || true)
+            else
+              username="$userpass"
+            fi
+            if [ -n "$userpass" ]; then
+              echo "Credentials not explicitly provided; parsed from URL 💬"
+            fi
+          fi
+
+          # Extract host information
+          hostport=$(echo "${string_no_protocol/$userpass@/}" |\
+            cut -d"/" -f1 || true)
+          host=$(echo "$hostport" | cut -d":" -f1 || true)
+          api_port=$(echo "$hostport" | grep ":" | cut -d":" -f2 || true)
+          path=$(echo "$string_no_protocol" | grep "/" | cut -d"/" -f2- || true)
+        }
+
+        parseString $url
+
+        if [ -z "$api_port" ] && [ "$protocol" = 'http' ]; then
+          api_port='80'
+        elif [ -z "$api_port" ] && [ "$protocol" = 'https' ]; then
+          api_port='443'
+        fi
+
+        echo "# $service_name" >> "$GITHUB_STEP_SUMMARY"
+        echo "### Check API/Service Availability 🛠️" \
+          >> "$GITHUB_STEP_SUMMARY"
+
+        # Create a file to capture cURL server response
+        server_reply=$(mktemp)
+
+        if [ "f$debug_lower" = 'ftrue' ]; then
+          curl_cmd="$curl_cmd -q -i -o $server_reply"
+        else
+          curl_cmd="$curl_cmd --no-progress-meter -q -i -o $server_reply"
+        fi
+
+        if [ -n "$auth_string" ]; then
+          echo "Authentication credentials provided 💬"
+          curl_cmd="$curl_cmd  -u $auth_string"
+        fi
+        # Start retry/test loop until server responds or timeout/retries expire
+        while true; do
+          if [ "f$debug_lower" = 'ftrue' ]; then
+            echo "$curl_cmd -w "%{http_code}" $url 🐞"
+          fi
+          response_code=$($curl_cmd -w "%{http_code}" "$url" || true)
+          echo "response_code=$response_code" >> "$GITHUB_OUTPUT"
+          reply_size=$(stat -c%s "$server_reply")
+
+          if [ "$response_code" -eq "$http_code" ]; then
+            echo "$protocol://$host:$api_port ✅" >> "$GITHUB_STEP_SUMMARY"
+            echo "$protocol://$host:$api_port ✅"
+            echo "Returned status code: $response_code"
+            if [ "$counter" -gt 0 ]; then
+              startup_delay=$(($counter * $delay))
+              echo "Service startup delay/time: $startup_delay 💬"
+              echo "startup_delay=$startup_delay" >> "$GITHUB_OUTPUT"
+            fi
+            if [ -z "${{ inputs.regex }}" ]; then
+              # No further validation needed when no RegEx supplied
+              break
+            fi
+            echo "Regular expression provided; validating response/reply"
+            if [ ! -f "$server_reply" ]; then
+              echo "Warning: regex validation requested, but response empty ⚠️"
+            else
+              if ($grep_cmd -E "${{ inputs.regex }}" "$server_reply"); then
+                echo "RegEx matched server reply/body ✅" \
+                  >> "$GITHUB_STEP_SUMMARY"
+                echo "RegEx matched server reply/body ✅"
+              else
+                echo "Warning: server reply did NOT match expression ❌" \
+                  >> "$GITHUB_STEP_SUMMARY"
+                echo "Warning: server reply did NOT match expression ❌"
+                if [ "$reply_size" -gt 0 ] && \
+                  [ "f$debug_lower" = 'ftrue' ]; then
+                  echo "Debug dump of server reply 🐞"
+                  cat "$server_reply"
+                fi
+                exit 1
+              fi
+            fi
+            break
+          else
+            sleep "$delay" # Wait before retrying the service again
+            counter=$((counter + 1))
+            if [ "f$debug_lower" = 'ftrue' ]; then
+              echo "Attempt: $counter Limit: $retries Delay: $delay 🐞"
+            fi
+          fi
+          if [ "$counter" -eq "$retries" ]; then
+            startup_delay=$(($counter * $delay))
+            echo "startup_delay=$startup_delay" >> "$GITHUB_OUTPUT"
+            echo "$protocol://$host:$api_port" >> "$GITHUB_STEP_SUMMARY"
+            echo "$protocol://$host:$api_port"
+            echo "Did not respond within $startup_delay seconds ❌" \
+              >> "$GITHUB_STEP_SUMMARY"
+            echo "Did not respond within $startup_delay seconds ❌"
+            if [ -n "$response_code" ]; then
+              echo "Status code: $response_code"
+            fi
+            if [ "$response_code" -eq '401' ]; then
+              echo "Unauthorized; check/supply valid API/service credentials ⚠️"
+            fi
+            if [ "$reply_size" -gt 0 ] && [ "f$debug_lower" = 'ftrue' ]; then
+              echo "Debug dump of server reply 🐞"
+              cat "$server_reply"
+            fi
+            exit 1
+          fi
+        done
