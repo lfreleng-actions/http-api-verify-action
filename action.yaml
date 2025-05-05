@@ -1,0 +1,38 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+# actions-template
+name: "🛠️ Actions Template"
+description: "Description of action"
+# Any relevant notes/observations can go here
+
+inputs:
+  input:
+    description: "Description of input"
+    required: true
+    type: 'string'
+
+outputs:
+  output:
+    description: "Description of output"
+    value: ${{ steps.code.outputs.output }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Friendly Name"
+      id: code
+      shell: bash
+      run: |
+        # Friendly Name
+        input="${{ inputs.input }}"
+        if [ -z "$input" ]; then
+          echo "Error: mandatory input was not set/configured ❌"
+          exit 1
+        fi
+
+        echo "output=$input" >> "$GITHUB_ENV"
+        echo "output=$input" >> "$GITHUB_OUTPUT"
+        echo "Action received: $input ✅"
+        echo "Action received: $input ✅" >> "$GITHUB_STEP_SUMMARY"
