@@ -2,37 +2,152 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
-# actions-template
-name: "🛠️ Actions Template"
-description: "Description of action"
-# Any relevant notes/observations can go here
+# http-api-verify-action
+name: '🛠️ Check HTTP API Service Availability'
+description: 'Tests an HTTP/HTTPS API endpoint for service availability'
 
 inputs:
-  input:
-    description: "Description of input"
+  # Mandatory
+  url:
+    # Example: "http://127.0.0.1:8080/index.yaml"
+    description: 'URL of HTTP/HTTPS API server to check'
     required: true
     type: 'string'
+    # See: https://regex101.com/r/cvFxsT/2
+    # Capture group 1: http|https
+    # Capture group 2: port number
+  # Optional
+  auth_string:
+    # Example: "-u username:password"
+    description: 'Authentication string in cURL format'
+    required: false
+    type: 'string'
+  service_name:
+    # Example: 'ChartMuseum'
+    description: 'Friendly name for tested HTTP/HTTPS API service'
+    required: false
+    type: 'string'
+    default: 'API Service'
+  delay:
+    description: 'Time in seconds between API service connection attempts'
+    required: false
+    type: 'string'
+    # Try once every second
+    default: 1
+  retries:
+    description: 'Number of retries before declaring service unavailable'
+    required: false
+    # With default one second retries, will timeout after 90 seconds
+    type: 'string'
+    default: 90
+  http_code:
+    description: 'HTTP response code to accept from the API service'
+    required: false
+    type: 'string'
+    default: 200
+  regex:
+    description: 'Verify server response with regular expression'
+    required: false
+    type: 'string'
+  debug:
+    description: "Enables cURL query debugging"
+    required: false
+    type: 'boolean'
+    default: false
 
 outputs:
-  output:
-    description: "Description of output"
-    value: ${{ steps.code.outputs.output }}
+  retries:
+    description: 'Number of retries until server became available'
+    value: "${{ steps.check.outputs.retries }}"
+  reply_code:
+    description: 'Final HTTP response code received from the API server'
+    value: "${{ steps.check.outputs.return_code }}"
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
-    - name: "Friendly Name"
-      id: code
+    - name: 'Validate action inputs'
       shell: bash
       run: |
-        # Friendly Name
-        input="${{ inputs.input }}"
-        if [ -z "$input" ]; then
-          echo "Error: mandatory input was not set/configured ❌"
-          exit 1
+        # Validate action inputs
+        if ! [[ "${{ inputs.delay }}" =~ ^[0-9]+$ ]]; then
+          echo "Error: retry delay must be a positive integer ❌"; exit 1
+        fi
+        if ! [[ "${{ inputs.retries }}" =~ ^[0-9]+$ ]]; then
+          echo "Error: number of retries must be a positive integer ❌"; exit 1
+        fi
+        if ! [[ "${{ inputs.http_code }}" =~ ^[0-9]+$ ]]; then
+          echo "Error: HTTP response code must be a positive integer ❌"; exit 1
         fi
 
-        echo "output=$input" >> "$GITHUB_ENV"
-        echo "output=$input" >> "$GITHUB_OUTPUT"
-        echo "Action received: $input ✅"
-        echo "Action received: $input ✅" >> "$GITHUB_STEP_SUMMARY"
+    - name: "Check HTTP API Service Availability"
+      id: check
+      shell: bash
+      run: |
+        # Check HTTP API Service Availability
+
+        # Check for cURL binary in PATH
+        curl_cmd=$(which curl || true)
+        if [ ! -x "$curl_cmd" ]; then
+          echo 'Error: cURL command not found ❌'; exit 1
+        fi
+
+        url="${{ inputs.url }}"
+        service_name="${{ inputs.service_name }}"
+        delay="${{ inputs.delay }}"
+        retries="${{ inputs.retries }}"
+        http_code="${{ inputs.http_code }}"
+        auth_string="${{ inputs.auth_string }}"
+        debug_lower=$(echo "${{ inputs.debug }}" | tr '[:upper:]' '[:lower:]')
+        counter=0
+
+        # https://regex101.com/r/sjjFwz/1
+        # Match http/https with RegEx: ^(https?+)(?!=.*)
+        http_type=$(echo "$url" | grep -oP '^(https?+)(?!=.*)')
+        if [ "$http_type" = 'http' ]; then
+          api_port='80'
+        elif [ "$http_type" = 'https' ]; then
+          api_port='443'
+        fi
+        # Check for non-standard port in URL
+        # Match port number with RegEx: ^(?:https?+)(?:.*)(?::)(\d*)(?:.*)$
+        non_standard_port=$(echo "$url" | grep -oP '^(?:https?+)(?:.*)(?::)(\d*)(?:.*)$')
+        if [ -n "$non_standard_port" ]; then
+          api_port="$non_standard_port"
+        fi
+
+        echo "# service_name" >> "$GITHUB_STEP_SUMMARY"
+        echo "### Check HTTP API Service Availability 🛠️" \
+          >> "$GITHUB_STEP_SUMMARY"
+
+        curl_cmd="$curl_cmd -q -s -o /dev/null $auth_string"
+        while true; do
+          if [ "f$debug_lower" = 'ftrue' ]; then
+            echo "Running: $curl_cmd -w "%{http_code}" $url 🐞"
+          fi
+          reply_code=$($curl_cmd -w "%{http_code}" $url || true)
+          echo "reply_code=$reply_code" >> "$GITHUB_OUTPUT"
+          if [ "$reply_code" -eq "$http_code" ]; then
+            echo "$url ✅" >> "$GITHUB_STEP_SUMMARY"
+            echo "$url ✅"
+            echo "TCP port: $api_port"
+            echo "Retries: $counter"
+            echo "Delay: $delay"
+            break
+          else
+            sleep "$delay" # Wait before retrying the service again
+            counter=$((counter + 1))
+          fi
+          if [ "$counter" -eq "$retries" ]; then
+            echo "Retries expired, API/service failed to respond" \
+              >> "$GITHUB_STEP_SUMMARY"
+            echo "Retries expired, API/service failed to respond"
+            echo "$url ❌" >> "$GITHUB_STEP_SUMMARY"
+            echo "$url ❌"
+            echo "TCP port: $api_port  Retries: $counter" \
+              >> "$GITHUB_STEP_SUMMARY"
+            echo "TCP port: $api_port"
+            echo "Retries: $counter"
+            echo "Delay: $delay"
+          fi
+        done

@@ -13,6 +13,10 @@ on:
   pull_request:
     branches: ["main"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
@@ -24,35 +28,28 @@ jobs:
       contents: read
     steps:
       - name: "Checkout repository"
+        # yamllint disable-line rule:line-length
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # Perform setup prior to running test(s)
-      - name: "Testing setup step"
-        shell: bash
-        run: |
-          # Testing setup step
-          echo "Testing setup step"
-          echo "Testing setup step/summary output" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: "Running local action: ${{ github.repository }}"
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [https://www.linuxfoundation.org/]"
         uses: ./
         with:
-          input: "test input 💬"
-
-      - name: "Validated local action: ${{ github.repository }}"
-        shell: bash
-        run: |
-          # Local action validation
-          echo "Validated local action: ${{ github.repository }}"
-          echo "Validation step summary output" >> "$GITHUB_STEP_SUMMARY"
+          url: 'https://www.linuxfoundation.org/'
+          service_name: 'Linux Foundation web site'
+          retries: 2
+          delay: 3
 
       # yamllint disable-line rule:line-length
-      - name: "Running local action: ${{ github.repository }} [Override Failure]"
+      - name: "Running local action: ${{ github.repository }} [Failure test]"
         uses: ./
         id: failure
         continue-on-error: true
         with:
-          invalid_input: "Some garbage"
+          url: "https://garbage.junk.notevenworthit.com:8080"
+          retries: 2
+          delay: 3
+          debug: true
 
       # Failure testing is also important
       - name: "Error if step above did NOT fail"

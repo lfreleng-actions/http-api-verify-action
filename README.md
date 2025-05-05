@@ -3,11 +3,11 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 -->
 
-# 🛠️ Template Action
+# 🛠️ Check HTTP API Service Availability
 
-This is a template for the other actions in this Github organisation.
+Tests an HTTP/HTTPS API endpoint for service availability.
 
-## actions-template
+## http-api-verify-action
 
 ## Usage Example
 
@@ -15,11 +15,11 @@ This is a template for the other actions in this Github organisation.
 
 ```yaml
 steps:
-  - name: "Action template"
-    id: action-template
-    uses: lfreleng-actions/actions-template@main
+  - name: 'Check HTTP/HTTP API service'
+    uses: lfreleng-actions/http-api-verify-action@main
     with:
-      input: "placeholder"
+      url: 'http://127.0.0.1:8080/index.yaml'
+      auth_string: "-u chartmuseum:${{ secrets.github_token }}"
 ```
 
 <!-- markdownlint-enable MD046 -->
@@ -28,9 +28,15 @@ steps:
 
 <!-- markdownlint-disable MD013 -->
 
-| Name          | Required | Description  |
-| ------------- | -------- | ------------ |
-| input         | False    | Action input |
+| Name         | Required | Default     | Description                                             |
+| ------------ | -------- | ----------- | ------------------------------------------------------- |
+| url          | True     |             | URL of HTTP/HTTPS API server to check                   |
+| auth_string  | False    |             | Authentication string in cURL format                    |
+| service_name | False    | API Service | Friendly name for tested HTTP/HTTPS API service         |
+| delay        | False    | 1           | Time in seconds between API service connection attempts |
+| retries      | False    | 90          | Number of retries before declaring service unavailable  |
+| http_code    | False    | 200         | HTTP response code to accept from the API service       |
+| regex        | False    |             | Verify server response with regular expression          |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -38,12 +44,15 @@ steps:
 
 <!-- markdownlint-disable MD013 -->
 
-| Name          | Description   |
-| ------------- | ------------- |
-| output        | Action output |
+| Name      | Description                                           |
+| --------- | ----------------------------------------------------- |
+| retries   | Number of retries until server became available       |
+| http_code | Final HTTP response code received from the API server |
 
 <!-- markdownlint-enable MD013 -->
 
 ## Implementation Details
 
-## Notes
+Uses: [cURL](https://curl.se/)
+
+A command line tool and library for transferring data with URLs.
