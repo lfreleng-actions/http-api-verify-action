@@ -11,7 +11,7 @@ inputs:
   url:
     # Example: "http://username:password@127.0.0.1:8080/index.yaml"
     description: 'URL of API server/interface to check'
-    required: false
+    required: true
     type: 'string'
   auth_string:
     # Parsed from the URL string above, but can be provided explicitly
@@ -41,7 +41,7 @@ inputs:
     description: 'Number of retries before declaring service unavailable'
     required: false
     type: 'integer'
-    default: 3
+    default: 10
   expected_http_code:
     description: 'HTTP response code to accept from the API service'
     required: false
@@ -67,51 +67,8 @@ inputs:
     required: false
     type: 'string'
     default: 'GET'
-  request_body:
-    description: 'Data to send with POST/PUT/PATCH requests'
-    required: false
-    type: 'string'
-  content_type:
-    description: 'Content type of the request body'
-    required: false
-    type: 'string'
-    default: 'application/json'
-  headers:
-    description: 'Custom HTTP headers in JSON format'
-    required: false
-    type: 'string'
-  verify_ssl:
-    description: 'Verify SSL certificates'
-    required: false
-    type: 'boolean'
-    default: true
-  include_response_body:
-    description: 'Include response body in outputs (base64 encoded)'
-    required: false
-    type: 'boolean'
-    default: false
-  follow_redirects:
-    description: 'Follow HTTP redirects'
-    required: false
-    type: 'boolean'
-    default: true
-  max_response_time:
-    description: 'Maximum acceptable response time in seconds'
-    required: false
-    type: 'number'
-    default: 0
-  connection_reuse:
-    description: 'Reuse connections between requests'
-    required: false
-    type: 'boolean'
-    default: true
   debug:
-    description: 'Enables cURL/action debugging'
-    required: false
-    type: 'boolean'
-    default: false
-  fail_on_timeout:
-    description: 'Fail the action if response time exceeds max_response_time'
+    description: "Enables cURL/action debugging"
     required: false
     type: 'boolean'
     default: false
@@ -138,18 +95,6 @@ outputs:
   regex_match:
     description: 'Whether the regular expression matched the server reply'
     value: "${{ steps.check.outputs.regex_match }}"
-  response_body_base64:
-    description: 'Response body base64 encoded (when include_response_body set)'
-    value: "${{ steps.check.outputs.response_body_base64 }}"
-  total_time:
-    description: 'Total time for the request in seconds'
-    value: "${{ steps.check.outputs.total_time }}"
-  connect_time:
-    description: 'Time to establish connection in seconds'
-    value: "${{ steps.check.outputs.connect_time }}"
-  response_time_exceeded:
-    description: 'Whether response time exceeded maximum acceptable time'
-    value: "${{ steps.check.outputs.response_time_exceeded }}"
 
 runs:
   using: 'composite'
@@ -215,13 +160,7 @@ runs:
       run: |
         # Check API/Service Availability
 
-        set -vx
-
         url="${{ inputs.url }}"
-        # Fall back to environment variable if input not provided
-        if [ -z "$url" ]; then
-          url="${HTTP_API_URL:-}"
-        fi
         service_name="${{ inputs.service_name }}"
         sleep_time="${{ inputs.initial_sleep_time }}"
         retries="${{ inputs.retries }}"
@@ -246,7 +185,7 @@ runs:
           if [ "$size_header" -gt 0 ] && \
             [ "f$show_header_json_lower" = 'ftrue' ]; then
             echo "Header JSON Output 📄"
-            jq -C -r '.' header_json
+            jq -c '.' header_json
           elif [ "$size_download" -gt 0 ] && \
             [ "f$debug_lower" = 'ftrue' ]; then
             echo "Reply Body 🐞"
@@ -264,9 +203,9 @@ runs:
         if [ "f$debug_lower" = 'ftrue' ]; then
           echo "Debugging Requested 🐞"
           # Don't silence grep command output during response testing
-          grep_cmd='grep'
+          grep_cmd="grep"
         else
-          grep_cmd='grep -q'
+          grep_cmd="grep -q"
         fi
 
         # Define a function to parse URLs
@@ -320,19 +259,6 @@ runs:
           curl_cmd="curl -si --max-time $curl_timeout -X ${{ inputs.http_method }}"
         fi
 
-        if [ -n "${{ inputs.request_body }}" ]; then
-          echo "::add-mask::${{ inputs.request_body }}"
-          curl_cmd="$curl_cmd -H 'Content-Type: ${{ inputs.content_type }}' \
-            -d '${{ inputs.request_body }}'"
-        fi
-
-        if [ -n "${{ inputs.headers }}" ]; then
-          echo "Adding custom headers 📋"
-          headers=$(echo '${{ inputs.headers }}' |\
-            jq -r 'to_entries[] | "-H \"" + .key + ": " + .value + "\""')
-          curl_cmd="$curl_cmd $headers"
-        fi
-
         if [ -n "$auth_string" ]; then
           echo "Authentication credentials provided 💬"
           curl_cmd="$curl_cmd -u $auth_string"
@@ -340,59 +266,28 @@ runs:
           echo "::add-mask::$auth_string"
         fi
 
-        if [ "f${{ inputs.verify_ssl }}" != "ftrue" ]; then
-          curl_cmd="$curl_cmd -k"
-          echo "Warning: SSL certificate verification disabled ⚠️"
-        fi
-
         # Only get headers when not processing message body
         if [ -z "${{ inputs.regex }}" ]; then
-          curl_cmd="$curl_cmd --head"
+          url_cmd="$curl_cmd --head"
         fi
 
-        if [ "f${{ inputs.connection_reuse }}" != "ftrue" ]; then
-          curl_cmd="$curl_cmd --no-keepalive"
-        fi
-
-        if [ "f${{ inputs.follow_redirects }}" = "ftrue" ]; then
-          curl_cmd="$curl_cmd -L"
-        else
-          curl_cmd="$curl_cmd --max-redirs 0"
-        fi
-
-        output_string="%output{total_time}%{time_total}%output{connect_time}%{time_connect}%output{header_json}%{header_json}%output{http_code}%{http_code}%output{size_download}%{size_download}%output{size_header}%{size_header}"
-
-        if [ "f$debug_lower" = 'ftrue' ]; then
-          echo "🐞 Using: curl_cmd -w \"$output_string\" ${url} -o response_body"
-        fi
         # Start retry/test loop until server responds or timeout/retries expire
         while true; do
           # Increment the retry counter
           counter=$((counter + 1))
 
+          # Run cURL command to check API/Service availability
           # Temporarily disable exit on error to handle retries gracefully
           set +e
-
-          # Run cURL command to check API/Service availability
-          $curl_cmd -w "$output_string" "${url}" -o response_body
+          $curl_cmd -w \
+            "%output{header_json}%{header_json}%output{http_code}%{http_code}%output{size_download}%{size_download}%output{size_header}%{size_header}" \
+            "${url}" -o response_body || true
 
           # Handle specific curl exit codes with helpful errors
-          curl_exit_code=$?
-          if [ $curl_exit_code -ne 0 ]; then
-            echo "cURL error code: $curl_exit_code"
-            case $curl_exit_code in
-              1) echo "Error: Unsupported protocol ❌" ;;
-              3) echo "Error: URL malformed ❌" ;;
-              5) echo "Error: Couldn't resolve proxy ❌" ;;
-              6) echo "Error: Couldn't resolve host ❌" ;;
-              7) echo "Error: Failed to connect to host ❌" ;;
-              28) echo "Error: Request timeout ❌" ;;
-              35) echo "Error: SSL connect error ❌" ;;
-              51) echo "Error: The peer's SSL certificate is not OK ❌" ;;
-              52) echo "Error: Nothing was returned from the server ❌" ;;
-              60) echo "Error: SSL self-signed certificate ❌" ;;
-              *) echo "Error: cURL encountered an error (code $curl_exit_code) ❌" ;;
-            esac
+          if [ $? -eq 6 ]; then
+            echo "Error: Could not resolve host ❌"
+          elif [ $? -eq 7 ]; then
+            echo "Error: Failed to connect to host ❌"
           fi
           # Re-enable exit on error for subsequent commands
           set -e
@@ -411,13 +306,6 @@ runs:
           size_download=$(<size_download)
           body=$(tail -c $size_download response_body)
 
-          if [ "f${{ inputs.include_response_body }}" = "ftrue" ] && [ -f response_body ]; then
-            # Use GitHub Actions multiline output format
-            echo "response_body_base64<<EOF" >> "$GITHUB_OUTPUT"
-            base64 response_body >> "$GITHUB_OUTPUT"
-            echo "EOF" >> "$GITHUB_OUTPUT"
-          fi
-
           # Multi-line output needs special handling
           if [ -f header_json ]; then
             header_json=$(jq -c '.' header_json) # Compact JSON into a single line
@@ -432,11 +320,12 @@ runs:
           echo "response_http_code=$response_http_code" >> "$GITHUB_OUTPUT"
           echo "response_header_size=$size_header" >> "$GITHUB_OUTPUT"
           echo "response_body_size=$size_download" >> "$GITHUB_OUTPUT"
-          echo "total_time=$(<total_time)" >> "$GITHUB_OUTPUT"
-          echo "connect_time=$(<connect_time)" >> "$GITHUB_OUTPUT"
 
           if [ "f$debug_lower" = 'ftrue' ]; then
             echo "Query Information 🐞"
+            echo "curl -si -w
+            \"%output{header_json}%{header_json}%output{http_code}%{http_code}%output{size_download}%{size_download}%output{size_header}%{size_header}\" \
+            "${url}" -o response_body 🐞"
             echo "Attempt: $counter / $retries"
             echo "Delay/Wait Interval: $sleep_time seconds"
             echo "Delay/Wait Current Value: $time_delay seconds"
@@ -457,34 +346,6 @@ runs:
               # No further validation needed when no RegEx supplied
               break
             fi
-
-            # Validate response time if max_response_time is specified
-            if [ "${{ inputs.max_response_time }}" != "0" ] && [ -f total_time ]; then
-              total_time=$(<total_time)
-              if (( $(echo "$total_time > ${{ inputs.max_response_time }}" | bc -l) )); then
-                echo "Warning: Response time exceeded maximum ($total_time > ${{ inputs.max_response_time }} seconds) ⚠️"
-                echo "response_time_exceeded=true" >> "$GITHUB_OUTPUT"
-                # Add to step summary
-                echo "| Response Time | ⚠️ $total_time seconds (exceeded limit of ${{ inputs.max_response_time }}) |" >> "$GITHUB_STEP_SUMMARY"
-
-                # Check if we should fail on timeout
-                if [ "f${{ inputs.fail_on_timeout }}" = "ftrue" ]; then
-                  echo "Error: Response time exceeded maximum allowed time ❌" \
-                    >> "$GITHUB_STEP_SUMMARY"
-                  echo "Error: Response time exceeded maximum allowed time ❌"
-                  exit 1
-                fi
-              else
-                echo "Response time within acceptable limit ($total_time <= ${{ inputs.max_response_time }} seconds) ✅"
-                echo "response_time_exceeded=false" >> "$GITHUB_OUTPUT"
-                # Add to step summary
-                echo "| Response Time | ✅ $total_time seconds |" >> "$GITHUB_STEP_SUMMARY"
-              fi
-            else
-              # Default value when validation is not performed
-              echo "response_time_exceeded=false" >> "$GITHUB_OUTPUT"
-            fi
-
             echo "Regular expression provided; validating response/reply"
             if [ ! -f response_body ]; then
               echo "Error: regex validation requested, but response empty ❌"
@@ -510,9 +371,9 @@ runs:
             echo "time_delay=$time_delay" >> "$GITHUB_OUTPUT"
             echo "$protocol://$host:$api_port" >> "$GITHUB_STEP_SUMMARY"
             echo "$protocol://$host:$api_port"
-            echo "Error: service marked failed at $time_delay seconds ❌" \
+            echo "Error: Service did not respond for $time_delay seconds ❌" \
               >> "$GITHUB_STEP_SUMMARY"
-            echo "Error: service marked failed at $time_delay seconds ❌"
+            echo "Error: Service did not respond for $time_delay seconds ❌"
 
             # Provide feedback on common response codes
             if [ "$response_http_code" -eq '401' ]; then

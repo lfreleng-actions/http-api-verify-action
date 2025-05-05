@@ -3,62 +3,196 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
 # Action test/validation workflow
-name: "Test GitHub Action 🧪"
+name: 'Test GitHub Action 🧪'
 
 # yamllint disable-line rule:truthy
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: ['main']
   pull_request:
-    branches: ["main"]
+    branches: ['main']
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
 
 permissions: {}
 
 jobs:
   ### Test the GitHub Action in this Repository ###
   tests:
-    name: "Test local GitHub Action"
-    runs-on: ubuntu-24.04
+    name: 'Test local GitHub Action'
+    runs-on: 'ubuntu-24.04'
     permissions:
       contents: read
+    timeout-minutes: 3
     steps:
-      - name: "Checkout repository"
+      - name: 'Checkout repository'
+        # yamllint disable-line rule:line-length
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # Perform setup prior to running test(s)
-      - name: "Testing setup step"
-        shell: bash
-        run: |
-          # Testing setup step
-          echo "Testing setup step"
-          echo "Testing setup step/summary output" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: "Running local action: ${{ github.repository }}"
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [Web Site/Debug]"
         uses: ./
         with:
-          input: "test input 💬"
-
-      - name: "Validated local action: ${{ github.repository }}"
-        shell: bash
-        run: |
-          # Local action validation
-          echo "Validated local action: ${{ github.repository }}"
-          echo "Validation step summary output" >> "$GITHUB_STEP_SUMMARY"
+          url: 'https://www.linuxfoundation.org'
+          service_name: 'Linux Foundation Web Server'
+          retries: 3
+          debug: true
 
       # yamllint disable-line rule:line-length
-      - name: "Running local action: ${{ github.repository }} [Override Failure]"
+      - name: "Running local action: ${{ github.repository }} [Web Site/Header JSON]"
         uses: ./
-        id: failure
+        with:
+          url: 'https://www.linuxfoundation.org'
+          service_name: 'Linux Foundation Web Server'
+          retries: 3
+          initial_sleep_time: 3
+          auth_string: "user:password"
+          show_header_json: true
+
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [Web Site: RegEx/Validate]"
+        uses: ./
+        with:
+          url: 'https://www.linuxfoundation.org'
+          service_name: 'Linux Foundation Web Server'
+          retries: 3
+          regex: '^.*Become a Member.*'
+
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [Non-Matching RegEx 🐞]"
+        id: bogus-regex
+        uses: ./
+        with:
+          url: 'https://www.linuxfoundation.org'
+          service_name: 'Linux Foundation Web Server'
+          retries: 3
+          regex: '^.*Tasty Aardvark Juice.*'
+
+      - name: "Validate outputs from previous step"
+        shell: bash
+        # yamllint disable rule:line-length
+        run: |
+          # Validate outputs from previous step
+          echo "Outputs from previous step 🔍"
+          echo " startup_delay: ${{ steps.bogus-regex.outputs.time_delay }}"
+          echo " response_http_code: ${{ steps.bogus-regex.outputs.response_http_code }}"
+          echo " response_header_size: ${{ steps.bogus-regex.outputs.response_header_size }}"
+          echo " response_body_size: ${{ steps.bogus-regex.outputs.response_body_size }}"
+          echo " regex_match: ${{ steps.bogus-regex.outputs.regex_match }}"
+          # Validate expected outputs
+          if [ "${{ steps.bogus-regex.outputs.response_http_code }}" != "200" ]; then
+            echo "Error: Expected HTTP response code 200, got ${{ steps.bogus-regex.outputs.response_http_code }} ❌"
+            exit 1
+          fi
+          if ! [[ "${{ steps.bogus-regex.outputs.response_header_size }}" =~ ^[0-9]+$ ]]; then
+            echo "Error: Expected response header size to be an integer, got ${{ steps.bogus-regex.outputs.response_header_size }} ❌"
+            exit 1
+          fi
+          if ! [[ "${{ steps.bogus-regex.outputs.response_body_size }}" =~ ^[0-9]+$ ]]; then
+            echo "Error: Expected response body size to be an integer, got ${{ steps.bogus-regex.outputs.response_body_size }} ❌"
+            exit 1
+          fi
+          if [ "${{ steps.bogus-regex.outputs.regex_match }}" != "false" ]; then
+            echo "Error: Expected regex match to be false, got ${{ steps.bogus-regex.outputs.regex_match }} ❌"
+            exit 1
+          fi
+          echo "All validations passed! ✅"
+
+      # Enable again after disabling for the previous step
+      # yamllint enable rule:line-length
+
+      # Don't write JSON output directly using the `echo` command in GitHub
+      # The below is an informational example, not a test
+      # - run: jq '.' <<<"$JSON_DATA"
+      #   env:
+      #     JSON_DATA: ${{ steps.bogus-regex.outputs.response_header_json }}
+
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [Failure test 🐞]"
+        uses: ./
+        id: bogus-server
         continue-on-error: true
         with:
-          invalid_input: "Some garbage"
+          url: 'https://garbage.junk.notevenworthit.com:8080'
+          service_name: 'Test/Bogus API Server'
+          retries: 5
+          debug: true
 
-      # Failure testing is also important
-      - name: "Error if step above did NOT fail"
-        if: steps.failure.outcome == 'success'
+      # Validate expected failure above
+      - name: 'Error if step above did NOT fail'
+        if: steps.bogus-server.outcome == 'success'
         shell: bash
         run: |
           # Error if step above did NOT fail
           echo "Error: previous test step did NOT fail ❌"
           exit 1
+
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [SSL Verification]"
+        id: ssl-test
+        continue-on-error: true
+        uses: ./
+        with:
+          url: 'https://self-signed.badssl.com/'
+          service_name: 'Self-Signed SSL Site'
+          verify_ssl: true
+
+      # Validate expected failure above
+      - name: 'Error if step above did NOT fail'
+        if: steps.ssl-test.outcome == 'success'
+        shell: bash
+        run: |
+          # Error if step above did NOT fail
+          echo "Error: previous test step did NOT fail ❌"
+          exit 1
+
+      - name: "Running local action: ${{ github.repository }} [Timeout Test]"
+        id: timeout-test
+        uses: ./
+        continue-on-error: true
+        with:
+          url: 'https://httpbin.org/delay/5'
+          service_name: 'Delayed Response Service'
+          curl_timeout: 2
+          debug: true
+          fail_on_timeout: true
+
+      - name: "Validate timeout behavior"
+        shell: bash
+        if: steps.timeout-test.outcome == 'success'
+        run: |
+          echo "Error: Timeout test should have failed ❌"
+          exit 1
+
+      # yamllint disable-line rule:line-length
+      - name: "Running local action: ${{ github.repository }} [Response Body Test]"
+        id: body-test
+        uses: ./
+        with:
+          url: 'https://httpbin.org/json'
+          service_name: 'JSON Response Service'
+          include_response_body: true
+          debug: true
+
+      - name: "Validate response body output"
+        shell: bash
+         # yamllint disable rule:line-length
+        run: |
+          echo "Checking response body output 🔍"
+          if [ -z "${{ steps.body-test.outputs.response_body_base64 }}" ]; then
+            echo "Error: Expected non-empty response_body_base64 ❌"
+            exit 1
+          fi
+
+          # Decode and verify JSON content
+          DECODED=$(echo "${{ steps.body-test.outputs.response_body_base64 }}" | base64 -d)
+          if ! echo "$DECODED" | jq . >/dev/null 2>&1; then
+            echo "Error: Response body is not valid JSON ❌"
+            echo "Decoded content:"
+            echo "$DECODED"
+            exit 1
+          fi
+          echo "Response body validation passed! ✅"
