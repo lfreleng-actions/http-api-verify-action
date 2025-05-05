@@ -221,7 +221,6 @@ runs:
         if (compare_versions "$curl_version" "8.3.0"); then
           echo "Error: cURL version must be 8.3.0 or higher ❌"; exit 1
         fi
-        echo "Using curl: $curl_version"
 
     - name: "Check API/Service Availability"
       id: check
@@ -230,22 +229,11 @@ runs:
       run: |
         # Check API/Service Availability
 
-        # Add comprehensive input debug info
-        if [ "f${{ inputs.debug }}" = "ftrue" ]; then
-          echo "🔍 Input Debug Info:"
-          echo "🔍   URL: '${{ inputs.url }}'"
-          echo "🔍   HTTP Method: '${{ inputs.http_method }}'"
-          echo "🔍   Request Body: '${{ inputs.request_body }}'"
-          echo "🔍   Content Type: '${{ inputs.content_type }}'"
-          echo "🔍   Request Headers: '${{ inputs.request_headers }}'"
-        fi
-
         url="${{ inputs.url }}"
         # Fall back to environment variable if input not provided
         if [ -z "$url" ]; then
           url="${HTTP_API_URL:-}"
         fi
-
         service_name="${{ inputs.service_name }}"
         sleep_time="${{ inputs.initial_sleep_time }}"
         retries="${{ inputs.retries }}"
@@ -257,15 +245,6 @@ runs:
           tr '[:upper:]' '[:lower:]')
         debug_lower=$(echo "${{ inputs.debug }}" |\
           tr '[:upper:]' '[:lower:]')
-
-        # Debug: Show all input values only when debug mode is enabled
-        if [ "f$debug_lower" = 'ftrue' ]; then
-          echo "🔍 Input Debug Info:"
-          echo "  URL: '$url'"
-          echo "  HTTP Method: '${{ inputs.http_method }}'"
-          echo "  Request Body: '${{ inputs.request_body }}'"
-          echo "  Request Headers: '${{ inputs.request_headers }}'"
-        fi
         counter='0'
         time_delay='0'
         response_http_code='0'
@@ -333,16 +312,6 @@ runs:
         # Parse the URL to extract components
         parseString $url
 
-        # Debug: Show URL values after parsing (only when debug mode is enabled)
-        if [ "f$debug_lower" = 'ftrue' ]; then
-          echo "🔍 URL Debug Info:"
-          echo "  Original URL: '$url'"
-          echo "  Protocol: '$protocol'"
-          echo "  Host: '$host'"
-          echo "  Port: '$api_port'"
-          echo "  Path: '$path'"
-        fi
-
         # Set the port number based on the protocol if not in the URL
         if [ -z "$api_port" ] && [ "$protocol" = 'http' ]; then
           api_port='80'
@@ -363,40 +332,16 @@ runs:
         # Request body and content type
         if [ -n "${{ inputs.request_body }}" ]; then
           echo "::add-mask::${{ inputs.request_body }}"
-          curl_cmd="$curl_cmd -H 'Content-Type: ${{ inputs.content_type }}'"
-          curl_cmd="$curl_cmd -d '${{ inputs.request_body }}'"
+          curl_cmd="$curl_cmd -H 'Content-Type: ${{ inputs.content_type }}' \
+            -d '${{ inputs.request_body }}'"
         fi
 
         # Custom headers
         if [ -n "${{ inputs.request_headers }}" ]; then
           echo "Adding custom send header JSON 📋"
-
-          # Store headers in a temp file to avoid shell escaping issues
-          cat > headers.json << 'EOF'
-        ${{ inputs.request_headers }}
-        EOF
-
-          if [ "f$debug_lower" = 'ftrue' ]; then
-            echo "🔍 Headers Debug: Contents of headers.json:"
-            cat headers.json
-
-            # Test jq parsing first
-            echo "🔍 Headers Debug: Testing jq parsing..."
-            jq -r 'to_entries[] | "-H \"" + .key + ": " + .value + "\""' headers.json
-          fi
-
-          # Process headers one by one to avoid command line issues
-          while IFS= read -r header_arg; do
-            if [ "f$debug_lower" = 'ftrue' ]; then
-              echo "🔍 Headers Debug: Adding header = '$header_arg'"
-            fi
-            curl_cmd="$curl_cmd $header_arg"
-          done < <(jq -r 'to_entries[] | "-H \"" + .key + ": " + .value + "\""' headers.json)
-
-          if [ "f$debug_lower" = 'ftrue' ]; then
-            echo "🔍 Headers Debug: curl_cmd after headers = '$curl_cmd'"
-          fi
-          rm -f headers.json
+          request_headers=$(echo '${{ inputs.request_headers }}' |\
+            jq -r 'to_entries[] | "-H \"" + .key + ": " + .value + "\""')
+          curl_cmd="$curl_cmd $request_headers"
         fi
 
         # Authentication
@@ -439,12 +384,6 @@ runs:
         if [ "f$debug_lower" = 'ftrue' ]; then
           echo "🐞 Using: curl_cmd -w \"TOTAL_TIME:\${time_total}|CONNECT_TIME:\${time_connect}|...\" ${url} -o response_body"
         fi
-
-        # Show the full curl command for debugging when debug mode is enabled
-        if [ "f$debug_lower" = 'ftrue' ]; then
-          echo "🔍 Full curl command: $curl_cmd -w \"$output_string\" \"${url}\" -o response_body"
-        fi
-
         # Start retry/test loop until server responds or timeout/retries expire
         while true; do
           # Increment the retry counter
@@ -454,9 +393,7 @@ runs:
           set +e
 
           # Run cURL command to check API/Service availability 🚀
-          # Use eval to properly handle complex curl command with quotes and special characters
-          # This prevents shell word-splitting issues that cause "URL malformed" errors
-          curl_output=$(eval "$curl_cmd -w \"$output_string\" \"${url}\" -o response_body" 2>/dev/null)
+          curl_output=$($curl_cmd -w "$output_string" "${url}" -o response_body 2>/dev/null)
           curl_exit_code=$?
           if [ $curl_exit_code -ne 0 ]; then
             echo "cURL error code: $curl_exit_code"
