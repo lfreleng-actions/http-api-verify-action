@@ -2,36 +2,156 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
-# actions-template
-name: "🛠️ Actions Template"
-description: "Description of action"
-# Any relevant notes/observations can go here
+# http-api-tool-docker
+name: '🛠️ Test API/Service Availability'
+description: 'Tests an HTTP/HTTPS API endpoint for service availability'
 
 inputs:
-  input:
-    description: "Description of input"
+  # Mandatory
+  url:
+    # Example: "http://username:password@127.0.0.1:8080/index.yaml"
+    description: 'URL of API server/interface to check'
     required: true
+    type: 'string'
+  auth_string:
+    # Parsed from the URL string above, but can be provided explicitly
+    # Should be in the format used by cURL, e.g. username:password
+    # Will be passed to cURL using the flag: curl -c "username:password"
+    description: 'Authentication string, colon separated username/password'
+    required: false
+    type: 'string'
+  service_name:
+    # Example: 'ChartMuseum Repository'
+    description: 'Name of HTTP/HTTPS API service tested'
+    required: false
+    type: 'string'
+    default: 'API Service'
+  initial_sleep_time:
+    description: 'Time in seconds between API service connection attempts'
+    required: false
+    type: 'integer'
+    # Try once every second
+    default: 1
+  max_delay:
+    description: 'Maximum delay in seconds between retries'
+    required: false
+    type: 'integer'
+    default: 30
+  retries:
+    description: 'Number of retries before declaring service unavailable'
+    required: false
+    type: 'integer'
+    default: 3
+  expected_http_code:
+    description: 'HTTP response code to accept from the API service'
+    required: false
+    type: 'integer'
+    default: 200
+  regex:
+    # Extended regular expression; uses grep with the "-E" flag
+    description: 'Verify server response with regular expression'
+    required: false
+    type: 'string'
+  show_header_json:
+    description: "Display response header as JSON in action output"
+    required: false
+    type: 'boolean'
+    default: false
+  curl_timeout:
+    description: 'Maximum time in seconds for cURL to wait for a response'
+    required: false
+    type: 'integer'
+    default: 5
+  http_method:
+    description: 'HTTP method to use (GET, POST, PUT, etc.)'
+    required: false
+    type: 'string'
+    default: 'GET'
+  request_body:
+    description: 'Data to send with POST/PUT/PATCH requests'
+    required: false
+    type: 'string'
+  content_type:
+    description: 'Content type of the request body'
+    required: false
+    type: 'string'
+    default: 'application/json'
+  request_headers:
+    description: 'Custom HTTP headers sent in JSON format'
+    required: false
+    type: 'string'
+  verify_ssl:
+    description: 'Verify SSL certificates'
+    required: false
+    type: 'boolean'
+    default: true
+  ca_bundle_path:
+    description: 'Path to CA bundle file for SSL verification'
+    required: false
+    type: 'string'
+  include_response_body:
+    description: 'Include response body in outputs (base64 encoded)'
+    required: false
+    type: 'boolean'
+    default: false
+  follow_redirects:
+    description: 'Follow HTTP redirects'
+    required: false
+    type: 'boolean'
+    default: true
+  max_response_time:
+    description: 'Maximum acceptable response time in seconds'
+    required: false
+    type: 'number'
+    default: 0
+  connection_reuse:
+    description: 'Reuse connections between requests'
+    required: false
+    type: 'boolean'
+    default: true
+  debug:
+    description: 'Enables debugging output'
+    required: false
+    type: 'boolean'
+    default: false
+  fail_on_timeout:
+    description: 'Fail the action if response time exceeds max_response_time'
+    required: false
+    type: 'boolean'
+    default: false
 
 outputs:
-  output:
-    description: "Description of output"
-    value: ${{ steps.code.outputs.output }}
+  time_delay:
+    description: 'Number of seconds waiting for service availability/failure'
+    value: "${{ steps.check.outputs.time_delay }}"
+  response_http_code:
+    description: 'HTTP response code received from the server'
+    value: "${{ steps.check.outputs.response_http_code }}"
+  response_header_json:
+    description: 'HTTP response header as JSON'
+    value: "${{ steps.check.outputs.response_header_json }}"
+  response_header_size:
+    description: 'HTTP response header size in bytes'
+    value: "${{ steps.check.outputs.response_header_size }}"
+  response_body_size:
+    description: 'HTTP response body size in bytes'
+    value: "${{ steps.check.outputs.response_body_size }}"
+  regex_match:
+    description: 'Whether the regular expression matched the server reply'
+    value: "${{ steps.check.outputs.regex_match }}"
+  response_body_base64:
+    description: 'Response body base64 encoded (when include_response_body set)'
+    value: "${{ steps.check.outputs.response_body_base64 }}"
+  total_time:
+    description: 'Total time for the request in seconds'
+    value: "${{ steps.check.outputs.total_time }}"
+  connect_time:
+    description: 'Time to establish connection in seconds'
+    value: "${{ steps.check.outputs.connect_time }}"
+  response_time_exceeded:
+    description: 'Whether response time exceeded maximum acceptable time'
+    value: "${{ steps.check.outputs.response_time_exceeded }}"
 
 runs:
-  using: "composite"
-  steps:
-    - name: "Friendly Name"
-      id: code
-      shell: bash
-      run: |
-        # Friendly Name
-        input="${{ inputs.input }}"
-        if [ -z "$input" ]; then
-          echo "Error: mandatory input was not set/configured ❌"
-          exit 1
-        fi
-
-        echo "output=$input" >> "$GITHUB_ENV"
-        echo "output=$input" >> "$GITHUB_OUTPUT"
-        echo "Action received: $input ✅"
-        echo "Action received: $input ✅" >> "$GITHUB_STEP_SUMMARY"
+  using: 'docker'
+  image: 'Dockerfile'

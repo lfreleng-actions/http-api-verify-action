@@ -1,0 +1,70 @@
+# GitHub Actions Cache Configuration
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+# This file contains cache configuration settings for optimizing GitHub Actions workflows
+
+# Cache key patterns for different dependency types
+cache:
+  python:
+    # Pip cache key based on requirements and OS
+    key_pattern: "pip-${{ runner.os }}-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}"
+    restore_keys:
+      - "pip-${{ runner.os }}-"
+
+  pdm:
+    # PDM cache key based on lock file and Python version
+    key_pattern: "pdm-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/pdm.lock') }}"
+    restore_keys:
+      - "pdm-${{ runner.os }}-${{ matrix.python-version }}-"
+      - "pdm-${{ runner.os }}-"
+
+  docker:
+    # Docker buildx cache configuration
+    cache_from:
+      - "type=gha"
+      - "type=registry,ref=ghcr.io/OWNER/REPO:buildcache"
+    cache_to:
+      - "type=gha,mode=max"
+      - "type=registry,ref=ghcr.io/OWNER/REPO:buildcache,mode=max"
+
+# Container registry settings
+registry:
+  url: "ghcr.io"
+  image_name_pattern: "ghcr.io/${{ github.repository }}"
+
+  # Image tagging strategy
+  tags:
+    main_branch: "latest"
+    pr: "pr-${{ github.event.number }}"
+    sha: "${{ github.sha }}"
+    semver: "${{ github.ref_name }}"
+
+# Build optimization settings
+build:
+  # Use BuildKit for improved caching
+  docker_buildkit: true
+
+  # Inline cache for registry
+  inline_cache: true
+
+  # Platform targets
+  platforms:
+    - "linux/amd64"
+    - "linux/arm64"
+
+# Cache cleanup policies
+cleanup:
+  # Automatically clean old cache entries
+  max_age_days: 7
+
+  # Keep specific number of recent entries
+  keep_recent: 10
+
+# Performance monitoring
+monitoring:
+  # Track cache hit ratios
+  cache_metrics: true
+
+  # Build time tracking
+  build_time_metrics: true

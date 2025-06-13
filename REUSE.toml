@@ -1,0 +1,15 @@
+version = 1
+
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+# Licensing statement required for GHA tests and linting to pass for only this repository
+
+[[annotations]]
+path = [
+     "*.lock",
+     "test_coverage_report*",
+     ".actrc"
+]
+SPDX-License-Identifier = "Apache-2.0"
+SPDX-FileCopyrightText = "2025 The Linux Foundation"

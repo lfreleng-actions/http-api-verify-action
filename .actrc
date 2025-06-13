@@ -1,0 +1,4 @@
+# Use a larger Docker image for better compatibility
+-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest
+# Increase verbosity for debugging
+--verbose

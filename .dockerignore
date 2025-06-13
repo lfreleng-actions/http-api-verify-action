@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# GitHub Actions
+.github
+
+# Documentation
+README.md
+*.md
+docs/
+
+# Test files and coverage reports
+tests/
+coverage_html_report/
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Python cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Makefile (not needed in container)
+Makefile
+
+# License files (already included in source)
+LICENSE
+LICENSES/
+
+# Compliance files
+REUSE.toml
+sonar-project.properties
+
+# Temporary files
+*.tmp
+*.log
+.cache/
+
+# Node modules (if any)
+node_modules/
+
+# Local development files
+.local/
+.config/
+
+# Docker files (prevent recursion)
+Dockerfile*
+.dockerignore
+docker-compose*.yml

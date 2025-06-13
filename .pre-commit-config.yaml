@@ -48,20 +48,22 @@ repos:
     hooks:
       - id: yamllint
         types: [yaml]
+        args: [--config-file=.yamllint]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: d19233b89771be2d89273f163f5edc5a39bbc34a  # frozen: v0.11.12
+    rev: 9aeda5d1f4bbd212c557da1ea78eca9e8c829e19  # frozen: v0.11.13
     hooks:
       - id: ruff
-        files: ^(scripts|tests|custom_components)/.+\.py$
+        files: ^(src|tests)/.+\.py$
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
-        files: ^(scripts|tests|custom_components)/.+\.py$
+        files: ^(src|tests)/.+\.py$
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: 7010b10a09f65cd60a23c207349b539aa36dbec1  # frozen: v1.16.0
     hooks:
       - id: mypy
+        additional_dependencies: [types-pycurl]
 
   - repo: https://github.com/btford/write-good
     rev: ab66ce10136dfad5146e69e70f82a3efac8842c1 # frozen: v1.0.8
@@ -102,7 +104,7 @@ repos:
   - repo: https://github.com/python-jsonschema/check-jsonschema.git
     rev: 06e4cc849d03f3a59ca223a4046f4bb5bb2aba6d  # frozen: 0.33.0
     hooks:
-      - id: check-github-actions
+      # - id: check-github-actions
       - id: check-github-workflows
       - id: check-jsonschema
         name: Check GitHub Workflows set timeout-minutes

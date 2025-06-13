@@ -1,0 +1,150 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[project]
+name = "http-api-tool"
+description = "A Python HTTP/HTTPS API testing tool for GitHub Actions and CLI usage"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Matthew Watkins", email = "93649628+ModeSevenIndustrialSolutions@users.noreply.github.com"},
+]
+maintainers = [
+    {name = "Matthew Watkins", email = "93649628+ModeSevenIndustrialSolutions@users.noreply.github.com"},
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Monitoring",
+    "Topic :: Utilities",
+]
+keywords = [
+    "http",
+    "api",
+    "testing",
+    "verification",
+    "github-actions",
+    "curl",
+    "monitoring",
+    "health-check",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pycurl>=7.45.0",
+    "typer[all]>=0.9.0",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "requests>=2.28.0",
+    "responses>=0.23.0",
+]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=22.0",
+    "isort>=5.0",
+    "flake8>=4.0",
+    "bandit>=1.7.0",
+    "pre-commit>=2.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/lfreleng-actions/http-api-tool-docker"
+Repository = "https://github.com/lfreleng-actions/http-api-tool-docker"
+Documentation = "https://github.com/lfreleng-actions/http-api-tool-docker/blob/main/README.md"
+"Bug Tracker" = "https://github.com/lfreleng-actions/http-api-tool-docker/issues"
+
+[project.scripts]
+http-api-tool = "http_api_tool:main"
+
+[tool.pdm]
+version = { source = "file", path = "src/http_api_tool/__init__.py" }
+distribution = true
+package-dir = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--cov",
+    "--cov-report=html"
+]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src/http_api_tool"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+show_missing = true
+precision = 2
+
+[tool.coverage.html]
+directory = "coverage_html_report"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["pycurl"]
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101", "B601"]

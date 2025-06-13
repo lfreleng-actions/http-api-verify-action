@@ -1,0 +1,266 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+name: 'Setup go-httpbin HTTPS Service'
+description: 'Sets up a local go-httpbin service with HTTPS support using mkcert for testing'
+author: 'HTTP API Tool Docker Project'
+
+inputs:
+  container-name:
+    description: 'Name for the go-httpbin Docker container'
+    required: false
+    default: 'go-httpbin'
+
+  port:
+    description: 'Port to expose the go-httpbin service on'
+    required: false
+    default: '8080'
+
+  image:
+    description: 'Docker image to use for go-httpbin'
+    required: false
+    default: 'ghcr.io/mccutchen/go-httpbin'
+
+  use-host-network:
+    description: 'Whether to use host networking mode (true/false)'
+    required: false
+    default: 'false'
+
+  install-homebrew:
+    description: 'Whether to install Homebrew (true/false)'
+    required: false
+    default: 'true'
+
+  wait-timeout:
+    description: 'Maximum time to wait for service to be ready (in seconds)'
+    required: false
+    default: '60'
+
+  debug:
+    description: 'Enable debug output (true/false)'
+    required: false
+    default: 'false'
+
+outputs:
+  container-name:
+    description: 'Name of the created container'
+    value: ${{ steps.setup.outputs.container-name }}
+
+  service-url:
+    description: 'Base URL of the running service'
+    value: ${{ steps.setup.outputs.service-url }}
+
+  host-gateway-ip:
+    description: 'Docker host gateway IP for container-to-host communication'
+    value: ${{ steps.setup.outputs.host-gateway-ip }}
+
+  ca-cert-path:
+    description: 'Path to the mkcert CA certificate'
+    value: ${{ steps.setup.outputs.ca-cert-path }}
+
+  cert-file:
+    description: 'Path to the SSL certificate file'
+    value: ${{ steps.setup.outputs.cert-file }}
+
+  key-file:
+    description: 'Path to the SSL private key file'
+    value: ${{ steps.setup.outputs.key-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup go-httpbin service
+      id: setup
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Enable debug mode if requested
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          set -x
+        fi
+
+        echo "=== Setting up go-httpbin HTTPS service ==="
+
+        # Install system dependencies
+        sudo apt-get update -qq
+        sudo apt-get install -y libnss3-tools
+
+        # Install Homebrew if requested
+        if [[ "${{ inputs.install-homebrew }}" == "true" ]]; then
+          echo "Installing Homebrew..."
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+          # Make brew available for subsequent steps
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew" >> "$GITHUB_ENV"
+          echo "HOMEBREW_CELLAR=/home/linuxbrew/.linuxbrew/Cellar" >> "$GITHUB_ENV"
+          echo "HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew" >> "$GITHUB_ENV"
+          echo "PATH=/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:\$PATH" >> "$GITHUB_ENV"
+          echo "MANPATH=/home/linuxbrew/.linuxbrew/share/man:\$MANPATH" >> "$GITHUB_ENV"
+          echo "INFOPATH=/home/linuxbrew/.linuxbrew/share/info:\$INFOPATH" >> "$GITHUB_ENV"
+        fi
+
+        # Setup Homebrew environment
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" 2>/dev/null || true
+
+        # Install mkcert
+        echo "Installing mkcert..."
+        brew install --build-from-source mkcert
+
+        # Get Docker host gateway IP for container-to-host communication (before certificate generation)
+        HOST_GATEWAY=$(docker run --rm alpine sh -c "ip route | grep '^default' | cut -d' ' -f3")
+        echo "Docker host gateway IP: $HOST_GATEWAY"
+
+        # Setup local CA and certificates
+        echo "Setting up local CA and certificates..."
+        mkcert -install
+        # Generate certificate for both localhost and the host gateway IP
+        mkcert -key-file /tmp/localhost-key.pem -cert-file /tmp/localhost-cert.pem localhost 127.0.0.1 "$HOST_GATEWAY"
+
+        # Install the CA certificate in the system trust store
+        CA_ROOT=$(mkcert -CAROOT)
+        echo "mkcert CA root directory: $CA_ROOT"
+
+        # Copy CA to known locations
+        sudo cp "$CA_ROOT/rootCA.pem" /usr/local/share/ca-certificates/mkcert-ca.crt
+        sudo update-ca-certificates
+
+        # Copy CA to accessible location and set permissions
+        sudo cp "$CA_ROOT/rootCA.pem" /tmp/mkcert-ca.pem
+        sudo chmod 644 /tmp/mkcert-ca.pem
+
+        # Also copy CA to workspace for Docker containers
+        # This allows the certificate to be accessed from GitHub Actions Docker containers
+        # which mount the workspace at /github/workspace
+        cp "$CA_ROOT/rootCA.pem" "$GITHUB_WORKSPACE/mkcert-ca.pem"
+        chmod 644 "$GITHUB_WORKSPACE/mkcert-ca.pem"
+
+        # Verify certificate files were created
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "=== Certificate files check ==="
+          ls -la /tmp/localhost*pem
+          head -5 /tmp/localhost-cert.pem
+        fi
+
+        # Clean up any existing container
+        docker rm -f "${{ inputs.container-name }}" 2>/dev/null || true
+
+        # Create shared directory for certificates
+        mkdir -p /tmp/certs
+        cp /tmp/localhost-key.pem /tmp/certs/
+        cp /tmp/localhost-cert.pem /tmp/certs/
+
+        # Determine network mode and port mapping
+        NETWORK_ARGS=""
+        PORT_MAPPING=""
+
+        if [[ "${{ inputs.use-host-network }}" == "true" ]]; then
+          NETWORK_ARGS="--network=host"
+        else
+          PORT_MAPPING="-p ${{ inputs.port }}:8080"
+        fi
+
+        # Run the container
+        echo "Starting go-httpbin container..."
+        docker run --name "${{ inputs.container-name }}" \
+          -e HTTPS_KEY_FILE='/tmp/localhost-key.pem' \
+          -e HTTPS_CERT_FILE='/tmp/localhost-cert.pem' \
+          -v /tmp/certs:/tmp \
+          $NETWORK_ARGS \
+          $PORT_MAPPING \
+          -d \
+          "${{ inputs.image }}"
+
+        # Verify files are mounted correctly
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "=== Files in container ==="
+          docker exec "${{ inputs.container-name }}" ls -la /tmp/localhost*pem || echo "Files not found in container"
+        fi
+
+        # Wait for the container to start
+        sleep 5
+
+        # Determine service URL based on network mode
+        if [[ "${{ inputs.use-host-network }}" == "true" ]]; then
+          SERVICE_URL="https://localhost:8080"
+          TEST_URL="https://localhost:8080/"
+        else
+          SERVICE_URL="https://$HOST_GATEWAY:${{ inputs.port }}"
+          TEST_URL="https://localhost:${{ inputs.port }}/"
+        fi
+
+        # Wait for service to be ready
+        echo "Waiting for go-httpbin service to be ready..."
+        WAIT_TIMEOUT="${{ inputs.wait-timeout }}"
+        ATTEMPTS=$((WAIT_TIMEOUT / 2))
+
+        for i in $(seq 1 $ATTEMPTS); do
+          if [[ "${{ inputs.debug }}" == "true" ]]; then
+            echo "=== Readiness check attempt $i/$ATTEMPTS ==="
+          fi
+
+          # Check if container is still running
+          if ! docker ps -f name="${{ inputs.container-name }}" --format "table {{.Names}}\t{{.Status}}" | grep -q "${{ inputs.container-name }}"; then
+            echo "ERROR: ${{ inputs.container-name }} container is not running!"
+            docker ps -a -f name="${{ inputs.container-name }}"
+            docker logs "${{ inputs.container-name }}"
+            exit 1
+          fi
+
+          # Test HTTPS with SSL verification disabled
+          if curl -f -s -k --connect-timeout 3 --max-time 5 "$TEST_URL" > /dev/null 2>&1; then
+            echo "go-httpbin service is ready! ✅"
+            break
+          fi
+
+          if [[ "$i" -eq "$ATTEMPTS" ]]; then
+            echo "ERROR: go-httpbin service failed to start properly after ${WAIT_TIMEOUT}s ❌"
+            echo "Final debug information:"
+            echo "Container status:"
+            docker ps -a -f name="${{ inputs.container-name }}"
+            echo "Container logs:"
+            docker logs "${{ inputs.container-name }}"
+            if [[ "${{ inputs.use-host-network }}" != "true" ]]; then
+              echo "Port bindings:"
+              docker port "${{ inputs.container-name }}"
+            fi
+            echo "Network connectivity test:"
+            netstat -tlpn | grep ":${{ inputs.port }}" || echo "Port ${{ inputs.port }} not listening"
+            exit 1
+          fi
+
+          sleep 2
+        done
+
+        # Final connectivity verification
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "=== Final connectivity verification ==="
+          docker ps -f name="${{ inputs.container-name }}"
+          docker logs "${{ inputs.container-name }}"
+          echo "Testing final connection:"
+          curl -v -k --connect-timeout 5 --max-time 10 "$TEST_URL" 2>&1 | head -20 || true
+        fi
+
+        # Set outputs
+        echo "container-name=${{ inputs.container-name }}" >> "$GITHUB_OUTPUT"
+        echo "service-url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+        echo "host-gateway-ip=$HOST_GATEWAY" >> "$GITHUB_OUTPUT"
+        echo "ca-cert-path=mkcert-ca.pem" >> "$GITHUB_OUTPUT"
+        echo "cert-file=/tmp/localhost-cert.pem" >> "$GITHUB_OUTPUT"
+        echo "key-file=/tmp/localhost-key.pem" >> "$GITHUB_OUTPUT"
+
+        # Also set environment variables for convenience
+        echo "HOST_GATEWAY=$HOST_GATEWAY" >> "$GITHUB_ENV"
+        echo "MKCERT_CA_PATH=mkcert-ca.pem" >> "$GITHUB_ENV"
+        echo "GO_HTTPBIN_URL=$SERVICE_URL" >> "$GITHUB_ENV"
+
+        echo "=== go-httpbin setup completed successfully! ==="
+        echo "Service URL: $SERVICE_URL"
+        echo "Host Gateway IP: $HOST_GATEWAY"
+        echo "CA Certificate: mkcert-ca.pem (in workspace)"
+
+branding:
+  icon: 'server'
+  color: 'blue'
