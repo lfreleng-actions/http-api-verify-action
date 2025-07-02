@@ -3,4 +3,4 @@
 
 # PDM pinned for security compliance and reproducible builds
 # Version pinning provides security through deterministic builds
-pdm==2.25.1
+pdm==2.25.4
