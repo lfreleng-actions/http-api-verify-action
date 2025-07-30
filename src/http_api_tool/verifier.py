@@ -34,10 +34,13 @@ class HTTPAPITester:
             message = f"{message} {emoji}"
         print(message)
 
-    def debug_log(self, message: str) -> None:
+    def debug_log(self, message: str, sensitive_data: bool = False) -> None:
         """Log a debug message if debug mode is enabled."""
         if self.debug:
-            print(f"🐞 {message}")
+            if sensitive_data:
+                print(f"🐞 [REDACTED] {message}")
+            else:
+                print(f"🐞 {message}")
 
     def write_step_summary(self, message: str) -> None:
         """Write to GitHub Actions step summary if available."""
@@ -48,7 +51,9 @@ class HTTPAPITester:
             except OSError as e:
                 # Gracefully handle permission errors when running in Docker containers
                 # where the step summary file may not be writable by the current user
-                self.debug_log(f"Unable to write to step summary file: {e}")
+                self.debug_log(
+                    f"Unable to write to step summary file: {e}", sensitive_data=False
+                )
 
     def write_github_output(self, key: str, value: str) -> None:
         """Write to GitHub Actions output file if available."""
@@ -63,7 +68,9 @@ class HTTPAPITester:
             except OSError as e:
                 # Gracefully handle permission errors when running in Docker containers
                 # where the output file may not be writable by the current user
-                self.debug_log(f"Unable to write to GitHub output file: {e}")
+                self.debug_log(
+                    f"Unable to write to GitHub output file: {e}", sensitive_data=False
+                )
                 # Still print the output for debugging purposes
                 print(f"Output: {key}={value}")
 
@@ -288,7 +295,10 @@ class HTTPAPITester:
             if ca_bundle_path:
                 if os.path.isfile(ca_bundle_path):
                     curl.setopt(pycurl.CAINFO, ca_bundle_path)
-                    self.debug_log(f"Using custom CA bundle: {ca_bundle_path}")
+                    self.debug_log(
+                        f"Using custom CA bundle: {ca_bundle_path}",
+                        sensitive_data=False,
+                    )
                 else:
                     self.log(
                         f"Warning: CA bundle file not found: {ca_bundle_path}", "⚠️"
@@ -336,7 +346,10 @@ class HTTPAPITester:
                 sanitized_headers_json = self.sanitize_headers_for_logging(
                     config["request_headers"]
                 )
-                self.debug_log(f"Added custom headers: {sanitized_headers_json}")
+                self.debug_log(
+                    f"Added custom headers: {sanitized_headers_json}",
+                    sensitive_data=False,
+                )
             except json.JSONDecodeError:
                 raise ValueError("Error: Invalid JSON in request_headers ❌")
 
@@ -496,14 +509,15 @@ class HTTPAPITester:
             self.log(f"🎯 Starting test: {config['service_name']}")
             self.log(f"🌐 Target URL: {self.sanitize_url_for_logging(config['url'])}")
 
-        self.debug_log("URL Debug Info:")
+        self.debug_log("URL Debug Info:", sensitive_data=False)
         self.debug_log(
-            f"  Original URL: '{self.sanitize_url_for_logging(config['url'])}'"
+            f"  Original URL: '{self.sanitize_url_for_logging(config['url'])}'",
+            sensitive_data=False,
         )
-        self.debug_log(f"  Protocol: '{protocol}'")
-        self.debug_log(f"  Host: '{host}'")
-        self.debug_log(f"  Port: '{port}'")
-        self.debug_log(f"  Path: '{url_parts['path']}'")
+        self.debug_log(f"  Protocol: '{protocol}'", sensitive_data=False)
+        self.debug_log(f"  Host: '{host}'", sensitive_data=False)
+        self.debug_log(f"  Port: '{port}'", sensitive_data=False)
+        self.debug_log(f"  Path: '{url_parts['path']}'", sensitive_data=False)
 
         # Write initial step summary
         self.write_step_summary(f"# {config['service_name']}")
@@ -532,9 +546,15 @@ class HTTPAPITester:
         while True:
             counter += 1
 
-            self.debug_log(f"Attempt: {counter} / {config['retries']}")
-            self.debug_log(f"Delay/Wait Interval: {sleep_time} seconds")
-            self.debug_log(f"Delay/Wait Current Value: {time_delay} seconds")
+            self.debug_log(
+                f"Attempt: {counter} / {config['retries']}", sensitive_data=False
+            )
+            self.debug_log(
+                f"Delay/Wait Interval: {sleep_time} seconds", sensitive_data=False
+            )
+            self.debug_log(
+                f"Delay/Wait Current Value: {time_delay} seconds", sensitive_data=False
+            )
 
             # Create and configure curl handle
             curl = self.create_curl_handle(**config)
@@ -562,9 +582,16 @@ class HTTPAPITester:
                         response["response_body"]
                     ).decode("ascii")
 
-                self.debug_log(f"Response Code: {response['http_code']}")
-                self.debug_log(f"Header Size: {response['header_size']} bytes")
-                self.debug_log(f"Body Size: {response['body_size']} bytes")
+                self.debug_log(
+                    f"Response Code: {response['http_code']}", sensitive_data=False
+                )
+                self.debug_log(
+                    f"Header Size: {response['header_size']} bytes",
+                    sensitive_data=False,
+                )
+                self.debug_log(
+                    f"Body Size: {response['body_size']} bytes", sensitive_data=False
+                )
 
                 # Check if request was successful
                 if not response["success"]:
