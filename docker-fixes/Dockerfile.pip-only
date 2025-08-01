@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+# Multi-stage build for optimized caching and smaller final image
+# This version uses pip directly to avoid PDM segmentation faults
+FROM python:3.11-slim@sha256:7a3ed1226224bcc1fe5443262363d42f48cf832a540c1836ba8ccbeaadf8637c AS base
+
+# Install system dependencies and create app user in a single layer
+# Include additional dependencies needed for pycurl compilation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    docker.io \
+    iproute2 \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    pkg-config \
+    python3-dev \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && groupadd -r appuser \
+    && useradd -r -g appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Build stage for dependencies
+FROM base AS deps
+
+# Create virtual environment
+RUN python3.11 -m venv /app/.venv
+
+# Activate virtual environment and upgrade pip
+RUN /app/.venv/bin/pip install --no-cache-dir --upgrade pip==24.3.1 setuptools==75.6.0 wheel==0.45.1
+
+# Install production dependencies directly with pip
+# Using exact versions to ensure reproducible builds
+RUN /app/.venv/bin/pip install --no-cache-dir \
+    pycurl==7.45.6 \
+    'typer[all]==0.15.1' \
+    certifi==2025.1.8 \
+    requests==2.32.3
+
+# Production stage
+FROM base AS production
+
+# Copy the virtual environment from deps stage
+COPY --from=deps /app/.venv /app/.venv
+
+# Copy source code and project configuration
+COPY src/ src/
+COPY pyproject.toml ./
+
+# Install the package in development mode to make it available
+RUN /app/.venv/bin/pip install --no-cache-dir -e .
+
+# Note: For GitHub Actions Docker containers that need to write to environment files,
+# running as root is necessary due to file permission requirements.
+# This is a common pattern in GitHub Actions Docker containers.
+
+# Activate the virtual environment permanently for the container
+ENV PATH="/app/.venv/bin:$PATH"
+ENV VIRTUAL_ENV="/app/.venv"
+
+# Set entrypoint to use the installed package
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "http_api_tool"]

@@ -5,7 +5,8 @@
 FROM python:3.11-slim@sha256:7a3ed1226224bcc1fe5443262363d42f48cf832a540c1836ba8ccbeaadf8637c AS base
 
 # Install system dependencies and create app user in a single layer
-RUN apt-get update && apt-get install -y \
+# Include additional dependencies needed for pycurl compilation
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     curl \
@@ -14,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libssl-dev \
     pkg-config \
+    python3-dev \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && groupadd -r appuser \
@@ -43,15 +46,32 @@ RUN python3 scripts/generate_requirements.py \
 # Upgrade pip and install PDM with hash verification using pip cache
 # The --require-hashes mode is automatically enabled when hashes are present
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip && \
-    pip install -r requirements-docker.txt
+    pip install --no-cache-dir --upgrade pip==24.3.1 setuptools==75.6.0 wheel==0.45.1 && \
+    pip install --no-cache-dir -r requirements-docker.txt
 
 # Copy project files and lock file for dependency resolution
 COPY pyproject.toml pdm.lock ./
 
-# Install dependencies only (without the package itself) using PDM cache
-RUN --mount=type=cache,target=/root/.cache/pdm \
-    pdm install --prod --no-isolation --no-self
+# Install dependencies with multiple fallback strategies to handle PDM segfault
+# 1. Try PDM with safer memory settings
+# 2. If that fails, use pip with requirements from pyproject.toml
+# 3. Clear caches and set memory limits to prevent segfaults
+RUN set -e && \
+    export PDM_IGNORE_SAVED_PYTHON=1 && \
+    export PDM_USE_VENV=1 && \
+    export PDM_PYTHON=/usr/local/bin/python3.11 && \
+    export PYTHONUNBUFFERED=1 && \
+    export PYTHONDONTWRITEBYTECODE=1 && \
+    rm -rf /root/.cache/pdm 2>/dev/null || true && \
+    mkdir -p /root/.cache/pdm && \
+    rm -rf /tmp/pip-tmp* /tmp/pip_* 2>/dev/null || true && \
+    /bin/bash -c 'ulimit -n 1024' && \
+    (timeout 300 pdm install --prod --no-isolation --no-self --no-lock || \
+     { echo "PDM failed, falling back to pip installation..." && \
+      /usr/local/bin/python3.11 -m venv /app/.venv && \
+      . /app/.venv/bin/activate && \
+      pip install --no-cache-dir --upgrade pip==24.3.1 setuptools==75.6.0 wheel==0.45.1 && \
+      pip install --no-cache-dir pycurl==7.45.6 'typer[all]==0.15.1' certifi==2025.1.8 requests==2.32.3; })
 
 # Production stage
 FROM base AS production
