@@ -14,6 +14,45 @@ shell code implementations in GitHub actions.
 
 ## http-api-tool-docker
 
+A containerized version of the HTTP API test tool with secure,
+multi-architecture support.
+
+### Docker Security Features
+
+The Dockerfile implements these security best practices:
+
+- **Version Pinning**: uv binary version is explicitly pinned (0.8.4)
+- **Checksum Validation**: Downloads verify against SHA256 checksums to
+  prevent MITM attacks
+- **Multi-Architecture Support**: Automatically detects and downloads the
+  correct binary for:
+  - `linux/amd64` (Intel/AMD x86_64)
+  - `linux/arm64` (Apple Silicon/ARM64)
+
+### Building the Container
+
+```bash
+# Build for current platform
+docker build -t http-api-tool .
+
+# Build for specific platform
+docker build --platform linux/amd64 -t http-api-tool .
+docker build --platform linux/arm64 -t http-api-tool .
+
+# Override uv version
+docker build --build-arg UV_VERSION=0.8.5 -t http-api-tool .
+```
+
+### Container Usage
+
+```bash
+# Run the tool
+docker run --rm http-api-tool --help
+
+# Check uv version in container
+docker run --rm --entrypoint=/usr/local/bin/uv http-api-tool --version
+```
+
 ## Features
 
 - **Supported HTTP Methods**: Supports GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS

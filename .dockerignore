@@ -10,8 +10,9 @@
 .github
 
 # Documentation
-README.md
+# README.md is needed for package metadata, exclude other markdown files
 *.md
+!README.md
 docs/
 
 # Test files and coverage reports
