@@ -1,0 +1,47 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+# Runs on tag push, promotes draft release
+name: 'Release on Tag Push 🚀'
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+    tags:
+      - '**'
+
+permissions: {}
+
+jobs:
+  promote-release:
+    name: 'Promote Draft Release'
+    # yamllint disable-line rule:line-length
+    if: github.ref_type == 'tag'
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: write
+    timeout-minutes: 3
+    steps:
+      # Harden the runner used by this workflow
+      # yamllint disable-line rule:line-length
+      - uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911  # v2.13.0
+        with:
+          egress-policy: audit
+
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+
+      - name: 'Verify Pushed Tag'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/tag-push-verify-action@80e2bdbbb9ee7b67557a31705892b75e75d2859e  # v0.1.1
+        with:
+          versioning: 'semver'
+
+      - name: 'Promote draft release'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/draft-release-promote-action@d7e7df12e32fa26b28dbc2f18a12766482785399  # v0.1.2
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: "${{ github.ref_name }}"
+          latest: true
