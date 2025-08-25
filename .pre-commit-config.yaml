@@ -51,7 +51,7 @@ repos:
         args: [--config-file=.yamllint]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 54a455f7ce629598b7535ff828fd5fb796f4b83f  # frozen: v0.12.9
+    rev: 0acff885bcb16381b67930fefb91e460202f172c  # frozen: v0.12.10
     hooks:
       - id: ruff
         # Currently only src and tests contain Python files
